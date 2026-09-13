@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pilzindex — Bodenwasserbilanz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    /* Palette aus dem Bodenprofil: Quarzsand, Ocker, Rosthorizont,
+       Humus, Kiefernnadel. Farbe kodiert Feuchte. */
+    --sand:#E3DFD4;
+    --sand-tief:#CFC8B6;
+    --ocker:#C08A1E;
+    --rost:#8A5A2B;
+    --humus:#2E2823;
+    --nadel:#4A5F3A;
+    --nadel-hell:#6E8A55;
+    --tinte:#1C2420;
+    --linie:#B8B1A0;
+
+    --trocken:var(--ocker);
+    --mittel:var(--nadel-hell);
+    --nass:var(--nadel);
+
+    --sp1:.35rem; --sp2:.7rem; --sp3:1.1rem; --sp4:1.8rem;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:Archivo,system-ui,sans-serif;
+    font-variant-numeric:tabular-nums;
+    background:var(--sand);
+    color:var(--tinte);
+    line-height:1.45;
+    padding:var(--sp3) var(--sp3) 4rem;
+    max-width:44rem;margin:0 auto;
+    font-size:16px;
+  }
+  h1{
+    font-size:1.05rem;font-weight:800;letter-spacing:-.02em;
+    display:flex;justify-content:space-between;align-items:baseline;
+    gap:var(--sp2);padding-bottom:var(--sp2);
+    border-bottom:2px solid var(--tinte);
+  }
+  h1 small{font-weight:500;font-size:.75rem;color:var(--rost)}
+  h2{
+    font-size:.8rem;font-weight:600;letter-spacing:.01em;
+    margin:var(--sp4) 0 var(--sp2);
+    padding-bottom:var(--sp1);border-bottom:1px solid var(--linie);
+  }
+
+  /* ---- Standortwahl ---- */
+  .spots{display:flex;gap:var(--sp1);flex-wrap:wrap;margin:var(--sp3) 0}
+  .spots button{
+    font:inherit;font-weight:500;font-size:.82rem;
+    padding:.4rem .7rem;border:1px solid var(--linie);
+    background:transparent;color:var(--tinte);border-radius:2px;
+    cursor:pointer;
+  }
+  .spots button[aria-pressed=true]{
+    background:var(--tinte);color:var(--sand);border-color:var(--tinte);
+  }
+  .spots button:focus-visible{outline:2px solid var(--rost);outline-offset:2px}
+
+  /* ---- Umgebungskarte ---- */
+  .karte-hinweis{font-size:.74rem;color:var(--rost);
+    margin-bottom:var(--sp2);line-height:1.5}
+  .k-radius{font:inherit;font-size:.8rem;padding:.45rem .4rem;
+    border:1px solid var(--linie);background:#fff;border-radius:2px}
+  .k-karte{height:62vh;min-height:300px;margin-top:var(--sp2);
+    border:2px solid var(--tinte);background:var(--sand-tief)}
+  .k-rampe{display:flex;height:9px;margin-top:var(--sp2)}
+  .k-rampe i{flex:1}
+  .k-marken{display:flex;justify-content:space-between;
+    font-size:.62rem;color:var(--rost);margin-top:2px}
+  .leaflet-popup-content{font:inherit;font-size:.8rem;line-height:1.55}
+  .leaflet-container{font-family:Archivo,system-ui,sans-serif}
+
+  /* ---- Ortsuche ---- */
+  .ortsuche{margin:0 0 var(--sp3);padding:var(--sp2) var(--sp3);
+    border-left:4px solid var(--rost);background:rgba(138,90,43,.07)}
+  .ortsuche input{
+    font:inherit;font-size:.88rem;padding:.5rem;width:100%;
+    border:1px solid var(--linie);background:#fff;border-radius:2px;
+  }
+  .o-status{font-size:.74rem;color:var(--rost);margin-top:.4rem}
+  .o-status.fehler{color:#8A2B2B}
+  .verwalten{display:flex;gap:var(--sp2);flex-wrap:wrap;
+    margin-top:var(--sp2)}
+  .verwalten button{
+    font:inherit;font-size:.76rem;font-weight:500;padding:.34rem .6rem;
+    border:1px solid var(--linie);background:transparent;
+    color:var(--rost);border-radius:2px;cursor:pointer;
+  }
+
+  /* ---- Artenfilter ---- */
+  .filter{display:flex;gap:var(--sp1);flex-wrap:wrap;
+    margin:0 0 var(--sp2);align-items:center}
+  .filter button{
+    font:inherit;font-size:.74rem;font-weight:500;
+    padding:.28rem .55rem;border:1px solid var(--linie);
+    background:transparent;color:var(--rost);border-radius:99px;
+    cursor:pointer;
+  }
+  .filter button[aria-pressed=true]{
+    background:var(--nadel);border-color:var(--nadel);color:#fff;
+  }
+  .filter button.alle{border-style:dashed;border-radius:2px}
+  .filter button:focus-visible{outline:2px solid var(--rost);outline-offset:2px}
+
+  /* ---- Rangliste ---- */
+  .rang{
+    display:grid;grid-template-columns:1fr auto;gap:var(--sp2);
+    align-items:baseline;padding:.42rem 0;
+    border-bottom:1px solid rgba(184,177,160,.45);font-size:.85rem;
+  }
+  .rang:last-child{border-bottom:0}
+  .rang.hier{font-weight:600}
+  .rang .ort{display:flex;flex-direction:column}
+  .rang .sub{font-size:.68rem;color:var(--rost);font-weight:400}
+  .rang .num{font-weight:800;font-size:1.05rem;letter-spacing:-.02em}
+  .rang button{
+    font:inherit;background:none;border:0;padding:0;cursor:pointer;
+    color:inherit;text-align:left;text-decoration:underline;
+    text-decoration-color:var(--linie);text-underline-offset:3px;
+  }
+
+  /* ---- Held: Bodenprofil + Index ---- */
+  .hero{
+    display:grid;grid-template-columns:auto 1fr;gap:var(--sp3);
+    align-items:stretch;margin-top:var(--sp3);
+  }
+  .profil{
+    position:relative;width:74px;height:190px;
+    border:2px solid var(--tinte);
+    background:
+      repeating-linear-gradient(180deg,
+        transparent 0 13px, rgba(0,0,0,.05) 13px 14px);
+    background-color:var(--sand-tief);
+    overflow:hidden;
+  }
+  .profil .wasser{
+    position:absolute;left:0;right:0;bottom:0;height:0;
+    background:var(--wasserfarbe,var(--nadel));
+    transition:height 900ms cubic-bezier(.22,.8,.3,1);
+  }
+  .profil .marke{
+    position:absolute;left:0;right:0;border-top:1px dashed var(--tinte);
+    font-size:.6rem;padding-left:3px;opacity:.75;
+  }
+  .profil-bz{
+    font-size:.64rem;text-align:center;margin-top:var(--sp1);
+    color:var(--rost);max-width:74px;line-height:1.25;
+  }
+  .zahlen{display:flex;flex-direction:column;justify-content:space-between}
+  .index-gross{
+    font-size:4.4rem;font-weight:800;line-height:.85;letter-spacing:-.045em;
+  }
+  .index-gross span{font-size:1.1rem;font-weight:500;letter-spacing:0}
+  .stufe{font-size:1rem;font-weight:600;margin-top:var(--sp1)}
+  .kennwerte{font-size:.78rem;line-height:1.7}
+  .kennwerte b{font-weight:600}
+  .kennwerte .pfeil{font-weight:800}
+
+  /* ---- Arten ---- */
+  .art{
+    display:grid;grid-template-columns:7.2rem 1fr 2.1rem;
+    gap:var(--sp2);align-items:center;
+    padding:.32rem 0;border-bottom:1px solid rgba(184,177,160,.45);
+    font-size:.85rem;
+  }
+  .art:last-child{border-bottom:0}
+  .art .balken{height:9px;background:rgba(0,0,0,.07)}
+  .art .balken i{display:block;height:100%}
+  .art .wert{text-align:right;font-weight:600;font-size:.82rem}
+  .art.aus{opacity:.42}
+  .art .detail{
+    grid-column:1/-1;font-size:.68rem;color:var(--rost);
+    margin-top:-.1rem;
+  }
+
+  /* ---- Verlauf ---- */
+  .verlauf{display:flex;align-items:flex-end;gap:2px;height:92px;
+    margin-top:var(--sp2)}
+  .verlauf div{
+    flex:1;min-width:0;position:relative;
+    background:var(--nadel-hell);
+  }
+  .verlauf div.prog{
+    background:repeating-linear-gradient(45deg,
+      var(--nadel-hell) 0 3px, rgba(255,255,255,.55) 3px 6px);
+  }
+  .verlauf div.heute{outline:2px solid var(--tinte);outline-offset:1px}
+  .achse{display:flex;justify-content:space-between;
+    font-size:.62rem;color:var(--rost);margin-top:var(--sp1)}
+  .legende{font-size:.68rem;color:var(--rost);margin-top:var(--sp1)}
+
+  .fenster{
+    margin-top:var(--sp3);padding:var(--sp2) var(--sp3);
+    border-left:4px solid var(--nadel);background:rgba(74,95,58,.08);
+    font-size:.85rem;
+  }
+  .fenster.leer{border-left-color:var(--ocker);
+    background:rgba(192,138,30,.1)}
+  .fenster b{font-weight:600}
+
+  /* ---- Regler ---- */
+  .regler{margin-top:var(--sp2);font-size:.8rem}
+  .regler label{display:block;margin-bottom:var(--sp2)}
+  .regler select,.regler input[type=number]{
+    font:inherit;font-size:.82rem;padding:.3rem .4rem;
+    border:1px solid var(--linie);background:#fff;border-radius:2px;
+    width:100%;margin-top:2px;
+  }
+  .regler .zwei{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp2)}
+
+  /* ---- Fundbuch ---- */
+  .fund-form{display:grid;gap:var(--sp2);font-size:.8rem}
+  .fund-form input,.fund-form textarea{
+    font:inherit;padding:.4rem;border:1px solid var(--linie);
+    background:#fff;border-radius:2px;width:100%;
+  }
+  .fund-form textarea{min-height:3.2rem;resize:vertical}
+  .knopf{
+    font:inherit;font-weight:600;font-size:.85rem;
+    padding:.5rem .9rem;border:0;border-radius:2px;
+    background:var(--tinte);color:var(--sand);cursor:pointer;
+  }
+  .knopf.leise{background:transparent;color:var(--rost);
+    border:1px solid var(--linie);font-weight:500}
+  .knopf:focus-visible{outline:2px solid var(--rost);outline-offset:2px}
+  .knopfreihe{display:flex;gap:var(--sp2);flex-wrap:wrap;
+    margin-top:var(--sp2)}
+  .funde li{
+    list-style:none;padding:var(--sp2) 0;font-size:.8rem;
+    border-bottom:1px solid rgba(184,177,160,.45);
+    display:flex;justify-content:space-between;gap:var(--sp2);
+  }
+  .funde .meta{color:var(--rost);font-size:.7rem}
+  .funde .loeschen{background:none;border:0;color:var(--rost);
+    font:inherit;cursor:pointer;font-size:.9rem;padding:0 .2rem}
+
+  .status{font-size:.8rem;padding:var(--sp2) 0;color:var(--rost)}
+  .status.fehler{color:#8A2B2B;font-weight:500}
+  footer{margin-top:var(--sp4);padding-top:var(--sp2);
+    border-top:1px solid var(--linie);
+    font-size:.7rem;color:var(--rost);line-height:1.6}
+
+  @media (prefers-reduced-motion:reduce){
+    .profil .wasser{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<h1>Pilzindex <small id="kopf-ort">Bodenwasserbilanz</small></h1>
+
+<div class="spots" id="spots" role="group" aria-label="Standort"></div>
+
+<div class="ortsuche" id="ortsuche" hidden>
+  <input type="text" id="o-eingabe" enterkeyhint="search"
+         placeholder="Ort oder 52.1303, 13.4076">
+  <div class="knopfreihe" style="margin-top:.5rem">
+    <button class="knopf" id="o-suchen">Hinzufügen</button>
+    <button class="knopf leise" id="o-abbrechen">Abbrechen</button>
+  </div>
+  <div id="o-status" class="o-status"></div>
+</div>
+
+<div class="filter" id="filter" role="group" aria-label="Arten filtern"></div>
+
+<div id="status" class="status">Wetterdaten werden geladen …</div>
+
+<section id="ergebnis" hidden>
+  <div class="hero">
+    <div>
+      <div class="profil" id="profil" role="img" aria-label="Bodenspeicher">
+        <div class="wasser" id="wasser"></div>
+        <div class="marke" id="marke-nfk" style="top:0">nFK</div>
+      </div>
+      <div class="profil-bz" id="profil-bz">0–30 cm</div>
+    </div>
+    <div class="zahlen">
+      <div>
+        <div class="index-gross" id="index">–<span>/100</span></div>
+        <div class="stufe" id="stufe"></div>
+      </div>
+      <div class="kennwerte" id="kennwerte"></div>
+    </div>
+  </div>
+
+  <div class="fenster" id="fenster"></div>
+
+  <h2>Wohin heute</h2>
+  <div id="rang"></div>
+
+  <h2>Arten heute</h2>
+  <div id="arten"></div>
+
+  <h2>Verlauf</h2>
+  <div class="verlauf" id="verlauf"></div>
+  <div class="achse"><span id="achse-a"></span><span id="achse-b"></span></div>
+  <div class="legende">Schraffiert = Prognose. Umrandet = heute.</div>
+
+  <h2>Umgebungskarte</h2>
+  <p class="karte-hinweis">
+    Zeigt, wo der Regen angekommen ist. Die Bodenannahme
+    (<span id="k-boden">–</span>) gilt für die ganze Fläche, nicht nur
+    für den Standort — die Karte vergleicht also Wetterlagen, keine
+    Standortgüte.
+  </p>
+  <div class="knopfreihe">
+    <button class="knopf" id="k-rechnen">Umgebung berechnen</button>
+    <select id="k-radius" class="k-radius">
+      <option value="0.18">40 km Kante · 3,6 km Zellen</option>
+      <option value="0.35" selected>78 km Kante · 7,1 km Zellen</option>
+      <option value="0.60">134 km Kante · 12,2 km Zellen</option>
+    </select>
+  </div>
+  <div id="k-status" class="o-status"></div>
+  <div id="k-karte" class="k-karte" hidden></div>
+  <div class="k-rampe" id="k-rampe" hidden></div>
+  <div class="k-marken" id="k-marken" hidden>
+    <span>0</span><span>20</span><span>40</span><span>65</span><span>100</span>
+  </div>
+
+  <h2>Standort justieren</h2>
+  <div class="regler">
+    <label>Boden
+      <select id="r-boden"></select>
+    </label>
+    <div class="zwei">
+      <label>Feuchtestufe
+        <select id="r-feuchte"></select>
+      </label>
+      <label>Bestand
+        <select id="r-bestand"></select>
+      </label>
+    </div>
+    <label>Habitat — steuert die Streuzersetzer (Parasol, Nelkenschwindling)
+      <select id="r-habitat"></select>
+    </label>
+    <label>Exposition — 0,90 sonnige Dünenkuppe bis 1,15 beschattete Senke
+      <input type="number" id="r-expo" min="0.8" max="1.2" step="0.01">
+    </label>
+    <div class="verwalten">
+      <button id="v-umbenennen">Umbenennen</button>
+      <button id="v-loeschen">Standort löschen</button>
+    </div>
+  </div>
+</section>
+
+<h2>Fundbuch</h2>
+<p style="font-size:.78rem;color:var(--rost);margin-bottom:var(--sp2)">
+  Jeder Eintrag speichert den Index des Tages mit. Damit lässt sich die
+  Latenzzeit nach ein, zwei Saisons gegen die eigenen Funde justieren —
+  das ist der Parameter mit dem größten Hebel.
+</p>
+<div class="fund-form">
+  <input type="text" id="f-arten" placeholder="Arten und Menge, z. B. 6 kg Maronen, 1 Steinpilz">
+  <textarea id="f-notiz" placeholder="Notiz: Teilfläche, Bodenzustand, Maden …"></textarea>
+</div>
+<div class="knopfreihe">
+  <button class="knopf" id="f-speichern">Fund eintragen</button>
+  <button class="knopf leise" id="f-export">Als CSV kopieren</button>
+</div>
+<ul class="funde" id="funde"></ul>
+
+<footer>
+  Der Index bewertet Wachstumsbedingungen, nicht Essbarkeit. Unklare Funde
+  gehören zur Pilzberatung — der Landesverband der Pilzsachverständigen
+  Brandenburg vermittelt Berater.<br><br>
+  § 15 LWaldG Bbg erlaubt Pilze nur in geringer Menge für den Eigenbedarf;
+  eine Kilogrammgrenze nennt das Gesetz nicht. In Naturschutzgebieten ist
+  das Sammeln untersagt. Auf ehemaligen Militärflächen auf
+  Munitionsbelastung achten.<br><br>
+  Wetter: Open-Meteo (ICON), Bodenfeuchte 9–27 cm als Modellwert, keine
+  Messung. Rückblick sind archivierte Modellläufe, keine Stationsdaten.
+</footer>
+
+<script>
+/* =======================================================================
+   Modell — Portierung von pilzindex.py
+   ===================================================================== */
+
+const BODEN = {
+  reinsand:            {nfk:28,  bz:"Rein-/Dünensand, Sander (Ss)"},
+  schwachlehmiger_sand:{nfk:38,  bz:"schwach lehmiger Sand (Su2, St2)"},
+  lehmiger_sand:       {nfk:48,  bz:"lehmiger Sand (Sl3, Slu)"},
+  sandiger_lehm:       {nfk:60,  bz:"sandiger Lehm (Ls)"},
+  geschiebemergel:     {nfk:68,  bz:"Geschiebemergel/Lehm (Lt, Ut)"},
+  anmoor:              {nfk:95,  bz:"Anmoor, grundwassernah"},
+  niedermoor:          {nfk:115, bz:"Niedermoor/Bruchwald"},
+};
+const FEUCHTE = {
+  trocken:-4, maessig_frisch:0, frisch:6, feucht:18, nass:35
+};
+const FEUCHTE_BZ = {
+  trocken:"trocken", maessig_frisch:"mäßig frisch", frisch:"frisch",
+  feucht:"feucht", nass:"nass"
+};
+const INTERZEPTION = {
+  Kiefer:.72, Fichte:.68, Mischwald:.80, Buche:.82,
+  Eiche:.84, Birke:.86, Erle:.86
+};
+const KC = {
+  Kiefer:1.00, Fichte:1.05, Mischwald:.95, Buche:.95,
+  Eiche:.92, Birke:.90, Erle:1.00
+};
+
+/* typ "mykorrhiza": an einen Baumpartner gebunden, Eignung über 'baeume'.
+   typ "saprotroph": lebt von Streuabbau, NICHT an einen Baum gebunden —
+   Eignung über 'habitate'. Der Parasol ist der Grund für diese
+   Unterscheidung: er stand vorher nicht im Modell, und die reine
+   Baumpartner-Logik hätte ihn falsch bewertet. */
+const ARTEN = [
+  {name:"Pfifferling", typ:"mykorrhiza",
+   fMin:.30,fOpt:.55, tMin:11,tMax:24, lag:14,
+   monate:[6,7,8,9,10],    baeume:["Kiefer","Fichte","Buche","Eiche"]},
+  {name:"Steinpilz", typ:"mykorrhiza",
+   fMin:.42,fOpt:.70, tMin:9, tMax:21, lag:12,
+   monate:[6,7,8,9,10,11], baeume:["Kiefer","Fichte","Buche","Eiche","Birke"]},
+  {name:"Marone", typ:"mykorrhiza",
+   fMin:.28,fOpt:.52, tMin:7, tMax:20, lag:14,
+   monate:[7,8,9,10,11],   baeume:["Kiefer","Fichte"]},
+  {name:"Birkenpilz", typ:"mykorrhiza",
+   fMin:.30,fOpt:.55, tMin:9, tMax:22, lag:12,
+   monate:[6,7,8,9,10],    baeume:["Birke"]},
+  {name:"Rotfußröhrling", typ:"mykorrhiza",
+   fMin:.24,fOpt:.46, tMin:9, tMax:23, lag:11,
+   monate:[6,7,8,9,10],    baeume:["Kiefer","Eiche","Buche"]},
+  {name:"Krause Glucke", typ:"mykorrhiza",
+   fMin:.32,fOpt:.58, tMin:9, tMax:22, lag:16,
+   monate:[8,9,10],        baeume:["Kiefer"]},
+  /* Saprotroph, kürzere Latenz, braucht Wärme und nährstoffreichen
+     Boden. Auf reinem Kiefernsander praktisch nicht zu erwarten —
+     deshalb Habitat Waldrand/Grünland, nicht Wald. */
+  {name:"Parasol", typ:"saprotroph",
+   fMin:.26,fOpt:.50, tMin:12,tMax:25, lag:10,
+   monate:[7,8,9,10],      habitate:["Waldrand","Grünland"]},
+  {name:"Nelkenschwindling", typ:"saprotroph",
+   fMin:.24,fOpt:.48, tMin:11,tMax:24, lag:8,
+   monate:[5,6,7,8,9,10],  habitate:["Grünland","Waldrand"]},
+];
+
+const HABITATE = ["Wald","Waldrand","Grünland"];
+
+/* Eignung des Standorts für eine Art.
+   Mykorrhizapilze brauchen den Baum selbst, nicht nur die Bestandsangabe:
+   auf Grünland gibt es keinen Partner, auch wenn im Feld 'bestand' noch
+   "Kiefer" steht. Deshalb zuerst das Habitat prüfen, dann den Partner. */
+function passt(a,spot){
+  const hab = spot.habitat || "Wald";
+  if(a.typ==="saprotroph") return (a.habitate||[]).includes(hab);
+  if(hab==="Grünland") return false;
+  if(!a.baeume || !a.baeume.length) return true;
+  return a.baeume.includes(spot.bestand) || spot.bestand==="Mischwald";
+}
+
+const STUFEN = [
+  [0,20,"noch nichts"],[20,40,"vielleicht was"],
+  [40,65,"gute Chancen"],[65,101,"voller Korb"]
+];
+const stufe = i => (STUFEN.find(s=>i>=s[0]&&i<s[1])||STUFEN[0])[2];
+
+function effektiveNfk(s){
+  const basis = s.nfk_mm != null ? s.nfk_mm : BODEN[s.bodenklasse].nfk;
+  return Math.max(10,(basis+(FEUCHTE[s.feuchtestufe]??0))*s.expo);
+}
+
+/* Einschicht-Speichermodell mit Interzeption und Reduktionsfunktion.
+   Ohne die Reduktionsfunktion läuft das Modell auf Sand zu schnell auf
+   Null und erholt sich danach unrealistisch schnell. */
+function bilanziere(p,e,nfk,bestand,start=.45){
+  const i = INTERZEPTION[bestand]??.80, kc = KC[bestand]??.95;
+  let s = nfk*start; const out=[];
+  for(let k=0;k<p.length;k++){
+    const zu = (p[k]||0)*i;
+    const f = s/nfk;
+    const red = f<.40 ? Math.min(1,f/.40) : 1;
+    s = Math.max(0,Math.min(nfk, s + zu - (e[k]||0)*kc*red));
+    out.push(s/nfk);
+  }
+  return out;
+}
+
+/* Volumetrische Modellfeuchte -> Füllgrad. Heuristik: Welkepunkt und
+   Feldkapazität werden aus der nFK abgeschätzt. Verzerrt nasse Böden
+   tendenziell nach unten, daher nur mit 45 % Gewicht. */
+function normiereModellfeuchte(v,nfk){
+  const pwp = .03+.0012*nfk, fk = pwp+nfk/300;
+  const sp = Math.max(.02, fk-pwp);
+  return v.map(x=>Math.max(0,Math.min(1,((x||0)-pwp)/sp)));
+}
+
+const feuchtefaktor = (f,a) =>
+  f<=a.fMin ? 0 : 1-Math.exp(-1.61*(f-a.fMin)/Math.max(1e-6,a.fOpt-a.fMin));
+
+function temperaturfaktor(t,a){
+  const puf=3;
+  if(t==null||t<=a.tMin-puf||t>=a.tMax+puf) return 0;
+  if(t<a.tMin) return (t-(a.tMin-puf))/puf;
+  if(t>a.tMax) return ((a.tMax+puf)-t)/puf;
+  return 1;
+}
+
+/* Richtung der Wasserbilanz. Der Füllgrad beschreibt den Zustand, die
+   Bilanz die Richtung — ein noch feuchter Boden bei hoher Verdunstung
+   ist auf dem Weg nach unten. Wirkt nur dämpfend. */
+function trendfaktor(mm){
+  if(mm>=15) return 1.10;
+  if(mm>=0)  return 1+.10*(mm/15);
+  if(mm<=-30)return .80;
+  return 1-.20*(Math.abs(mm)/30);
+}
+
+function mittel(a){
+  const v=a.filter(x=>x!=null&&!isNaN(x));
+  return v.length? v.reduce((x,y)=>x+y,0)/v.length : 0;
+}
+
+function berechne(spot,roh,gewichtBilanz=.55){
+  const nfk = effektiveNfk(spot);
+  const tage = roh.daily.time;
+  const p = roh.daily.precipitation_sum;
+  const e = roh.daily.et0_fao_evapotranspiration;
+  const tm = roh.daily.temperature_2m_mean;
+
+  const bil = bilanziere(p,e,nfk,spot.bestand);
+
+  // Stundenwerte der Bodenfeuchte zu Tagesmitteln
+  let mf = bil.slice();
+  const h = roh.hourly;
+  if(h && h.soil_moisture_9_to_27cm){
+    const eimer={};
+    h.time.forEach((t,i)=>{
+      const v=h.soil_moisture_9_to_27cm[i];
+      if(v==null) return;
+      const d=t.slice(0,10); (eimer[d]=eimer[d]||[]).push(v);
+    });
+    mf = normiereModellfeuchte(tage.map(t=>eimer[t]?mittel(eimer[t]):null),nfk);
+  }
+  const kombi = bil.map((b,i)=>gewichtBilanz*b+(1-gewichtBilanz)*mf[i]);
+
+  // Klimatische Wasserbilanz der letzten 14 Tage
+  const bil14 = tage.map((_,i)=>{
+    const a=Math.max(0,i-13);
+    const sp=p.slice(a,i+1).reduce((x,y)=>x+(y||0),0);
+    const se=e.slice(a,i+1).reduce((x,y)=>x+(y||0),0);
+    return sp-se;
+  });
+
+  const heute = new Date().toISOString().slice(0,10);
+
+  return tage.map((tag,idx)=>{
+    const monat = +tag.slice(5,7);
+    const r = {tag, fuellgrad:kombi[idx], bilanz14:bil14[idx],
+               prognose:tag>heute, index:{}, lag:{}, temp:{}, grund:{}};
+    for(const a of ARTEN){
+      if(!a.monate.includes(monat)){ r.index[a.name]=null; r.grund[a.name]="Saison"; continue; }
+      if(!passt(a,spot)){
+        r.index[a.name]=null;
+        r.grund[a.name] = a.typ==="saprotroph" ? "Habitat" : "Bestand";
+        continue;
+      }
+      const j = Math.max(0, idx-a.lag);
+      const fLag = mittel(kombi.slice(Math.max(0,j-6), j+1));
+      const tLag = mittel(tm.slice(Math.max(0,j-6), idx+1));
+      r.lag[a.name]=fLag; r.temp[a.name]=tLag;
+      r.index[a.name] = Math.min(100,
+        100*feuchtefaktor(fLag,a)*temperaturfaktor(tLag,a)
+        *trendfaktor(bil14[idx]));
+    }
+    return r;
+  });
+}
+
+/* Der Gesamtindex ist immer der beste Wert unter den AUSGEWÄHLTEN Arten.
+   Sonst zieht eine Art, auf die man es gar nicht abgesehen hat, den
+   Index nach oben und die Fensterermittlung geht am Ziel vorbei. */
+function gesamtVon(r,auswahl){
+  const werte = ARTEN.filter(a=>auswahl.has(a.name))
+    .map(a=>r.index[a.name]).filter(v=>v!=null);
+  return werte.length ? Math.max(...werte) : 0;
+}
+
+function besteArt(r,auswahl){
+  let n=null,w=-1;
+  for(const a of ARTEN){
+    if(!auswahl.has(a.name)) continue;
+    const v=r.index[a.name];
+    if(v!=null && v>w){ w=v; n=a.name; }
+  }
+  return n;
+}
+
+function findeFenster(reihe,auswahl,schwelle=40){
+  const out=[]; let start=null,spitze=0;
+  for(const r of reihe){
+    const g = gesamtVon(r,auswahl);
+    if(g>=schwelle){ if(!start)start=r.tag; spitze=Math.max(spitze,g); }
+    else if(start){ out.push([start,r.tag,spitze]); start=null; spitze=0; }
+  }
+  if(start) out.push([start,reihe[reihe.length-1].tag,spitze]);
+  return out;
+}
+
+/* =======================================================================
+   Standorte
+   ===================================================================== */
+
+const STANDARD = [
+  {key:"sperenberg", name:"Sperenberg", lat:52.1303, lon:13.4076,
+   bodenklasse:"reinsand", feuchtestufe:"maessig_frisch",
+   bestand:"Kiefer", habitat:"Wald", expo:1.05},
+  {key:"flaeming", name:"Hoher Fläming", lat:52.14, lon:12.59,
+   bodenklasse:"geschiebemergel", feuchtestufe:"frisch",
+   bestand:"Mischwald", habitat:"Wald", expo:1.00},
+  {key:"spreewald", name:"Spreewaldrand", lat:51.975, lon:13.80,
+   bodenklasse:"niedermoor", feuchtestufe:"feucht",
+   bestand:"Erle", habitat:"Waldrand", expo:1.05},
+  {key:"dubrow", name:"Dubrow", lat:52.19, lon:13.73,
+   bodenklasse:"schwachlehmiger_sand", feuchtestufe:"maessig_frisch",
+   bestand:"Mischwald", habitat:"Wald", expo:1.00},
+];
+
+let auswahl = new Set(ARTEN.map(a=>a.name));
+
+let spots = STANDARD.map(s=>({...s}));
+let aktiv = 0;
+let letzteReihe = null;
+const cache = {};
+
+/* =======================================================================
+   Speicher
+   ===================================================================== */
+
+async function hole(key,fallback){
+  try{ const r = await window.storage.get(key); return r? JSON.parse(r.value): fallback; }
+  catch{ return fallback; }
+}
+async function setze(key,wert){
+  try{ await window.storage.set(key,JSON.stringify(wert)); return true; }
+  catch(e){ console.error("Speichern fehlgeschlagen",e); return false; }
+}
+
+/* =======================================================================
+   Wetter
+   ===================================================================== */
+
+async function holeWetter(lat,lon){
+  const ck = lat.toFixed(3)+","+lon.toFixed(3);
+  if(cache[ck]) return cache[ck];
+
+  const q = new URLSearchParams({
+    latitude:lat.toFixed(4), longitude:lon.toFixed(4),
+    daily:["precipitation_sum","et0_fao_evapotranspiration",
+           "temperature_2m_mean","temperature_2m_max",
+           "temperature_2m_min"].join(","),
+    hourly:"soil_moisture_9_to_27cm,soil_temperature_18cm",
+    past_days:"60", forecast_days:"16", timezone:"Europe/Berlin"
+  }).toString();
+
+  /* fetch bekommt einen String, KEIN URL-Objekt: im Sandbox-Rahmen wird
+     der Aufruf per postMessage weitergeleitet, und ein URL-Objekt ist
+     nicht strukturiert klonbar — WebKit bricht dann mit
+     "The object can not be cloned" ab. */
+  const adresse = "https://api.open-meteo.com/v1/forecast?"+q;
+
+  const a = await fetch(adresse, {method:"GET", mode:"cors"});
+  if(!a.ok) throw new Error("Open-Meteo antwortet mit "+a.status);
+  const j = await a.json();
+  if(!j || !j.daily || !j.daily.time)
+    throw new Error("Antwort ohne Tageswerte");
+  cache[ck]=j; return j;
+}
+
+/* =======================================================================
+   Darstellung
+   ===================================================================== */
+
+const feuchtefarbe = f =>
+  f<.25 ? "var(--ocker)" : f<.45 ? "var(--nadel-hell)" : "var(--nadel)";
+
+const dt = s => s.slice(8,10)+"."+s.slice(5,7)+".";
+
+function zeichneSpots(){
+  const el = document.getElementById("spots");
+  el.innerHTML = "";
+  spots.forEach((s,i)=>{
+    const b = document.createElement("button");
+    b.textContent = s.name;
+    b.setAttribute("aria-pressed", i===aktiv);
+    b.onclick = ()=>{ aktiv=i; zeichneSpots(); lade(); };
+    el.appendChild(b);
+  });
+  const plus = document.createElement("button");
+  plus.textContent = "+ Hier";
+  plus.title = "Aktuellen Standort hinzufügen";
+  plus.onclick = standortHinzufuegen;
+  el.appendChild(plus);
+  const suche = document.createElement("button");
+  suche.textContent = "+ Ort";
+  suche.title = "Ort oder Koordinaten eingeben";
+  suche.onclick = ()=>zeigeOrtsuche(
+    document.getElementById("ortsuche").hidden);
+  el.appendChild(suche);
+}
+
+function fuelleRegler(){
+  const s = spots[aktiv];
+  const setzeOpt = (id,schluessel,wert,bz)=>{
+    const el = document.getElementById(id);
+    el.innerHTML = "";
+    for(const k of schluessel){
+      const o = document.createElement("option");
+      o.value = k;
+      o.textContent = bz ? bz(k) : k;
+      if(k===wert) o.selected = true;
+      el.appendChild(o);
+    }
+  };
+  setzeOpt("r-boden",Object.keys(BODEN),s.bodenklasse,
+    k=>BODEN[k].bz+" — "+BODEN[k].nfk+" mm");
+  setzeOpt("r-feuchte",Object.keys(FEUCHTE),s.feuchtestufe,k=>FEUCHTE_BZ[k]);
+  setzeOpt("r-bestand",Object.keys(KC),s.bestand);
+  setzeOpt("r-habitat",HABITATE,s.habitat||"Wald");
+  document.getElementById("r-expo").value = s.expo.toFixed(2);
+}
+
+function zeichneFilter(){
+  const el = document.getElementById("filter");
+  el.innerHTML = "";
+  const alle = document.createElement("button");
+  alle.className = "alle";
+  const volle = auswahl.size===ARTEN.length;
+  alle.textContent = volle ? "keine" : "alle";
+  alle.onclick = async ()=>{
+    auswahl = volle ? new Set() : new Set(ARTEN.map(a=>a.name));
+    await setze("auswahl",[...auswahl]);
+    zeichneFilter(); neuZeichnen();
+  };
+  el.appendChild(alle);
+  for(const a of ARTEN){
+    const b = document.createElement("button");
+    b.textContent = a.name;
+    b.setAttribute("aria-pressed", auswahl.has(a.name));
+    b.title = a.typ==="saprotroph"
+      ? "Streuzersetzer — braucht Habitat, keinen Baumpartner"
+      : "Mykorrhizapilz — braucht "+a.baeume.join(", ");
+    b.onclick = async ()=>{
+      auswahl.has(a.name) ? auswahl.delete(a.name) : auswahl.add(a.name);
+      await setze("auswahl",[...auswahl]);
+      zeichneFilter(); neuZeichnen();
+    };
+    el.appendChild(b);
+  }
+}
+
+/* Rangliste über alle konfigurierten Standorte. Das ist keine
+   Standortsuche — es vergleicht nur, was schon in der Liste steht. */
+async function zeichneRang(){
+  const el = document.getElementById("rang");
+  const heuteStr = new Date().toISOString().slice(0,10);
+  el.innerHTML = "<div style='font-size:.75rem;color:var(--rost)'>"+
+    "wird berechnet …</div>";
+
+  const zeilen = [];
+  for(let i=0;i<spots.length;i++){
+    const s = spots[i];
+    try{
+      const roh = await holeWetter(s.lat,s.lon);
+      const reihe = berechne(s,roh);
+      const h = reihe.find(r=>r.tag===heuteStr) || reihe[reihe.length-1];
+      const zukunft = reihe.filter(r=>r.tag>=heuteStr);
+      const fen = findeFenster(zukunft,auswahl);
+      zeilen.push({i, s, wert:gesamtVon(h,auswahl),
+        art:besteArt(h,auswahl),
+        fuell:Math.round(h.fuellgrad*100),
+        fenster: fen.length? fen[0] : null});
+    }catch{ zeilen.push({i, s, wert:null}); }
+  }
+
+  zeilen.sort((a,b)=>(b.wert??-1)-(a.wert??-1));
+  el.innerHTML = "";
+  if(!auswahl.size){
+    el.innerHTML = "<div style='font-size:.8rem;color:var(--rost)'>"+
+      "Keine Art ausgewählt — oben mindestens eine antippen.</div>";
+    return;
+  }
+  for(const z of zeilen){
+    const d = document.createElement("div");
+    d.className = "rang"+(z.i===aktiv?" hier":"");
+    if(z.wert==null){
+      d.innerHTML = "<span class='ort'>"+z.s.name+
+        "<span class='sub'>nicht abrufbar</span></span><span>—</span>";
+    } else {
+      const knopf = document.createElement("button");
+      knopf.textContent = z.s.name;
+      knopf.onclick = ()=>{ aktiv=z.i; zeichneSpots(); lade(); };
+      const ort = document.createElement("span");
+      ort.className = "ort";
+      ort.appendChild(knopf);
+      const sub = document.createElement("span");
+      sub.className = "sub";
+      sub.textContent = (z.art ? z.art+" · " : "")+
+        "Speicher "+z.fuell+" % · "+
+        (z.fenster ? "Fenster ab "+dt(z.fenster[0]) : "kein Fenster");
+      ort.appendChild(sub);
+      const num = document.createElement("span");
+      num.className = "num";
+      num.style.color = feuchtefarbe(z.wert/100*.6);
+      num.textContent = Math.round(z.wert);
+      d.appendChild(ort); d.appendChild(num);
+    }
+    el.appendChild(d);
+  }
+}
+
+function neuZeichnen(){
+  if(letzteReihe) zeichne(letzteReihe, spots[aktiv]);
+  zeichneRang();
+}
+
+function zeichne(reihe,spot){
+  letzteReihe = reihe;
+  const heuteStr = new Date().toISOString().slice(0,10);
+  const h = reihe.find(r=>r.tag===heuteStr) || reihe[reihe.length-1];
+  const nfk = effektiveNfk(spot);
+
+  document.getElementById("kopf-ort").textContent =
+    spot.name+" · "+spot.lat.toFixed(3)+", "+spot.lon.toFixed(3);
+
+  // Held
+  const f = h.fuellgrad;
+  const w = document.getElementById("wasser");
+  w.style.setProperty("--wasserfarbe", feuchtefarbe(f));
+  requestAnimationFrame(()=>{ w.style.height = (f*100).toFixed(1)+"%"; });
+  document.getElementById("profil").setAttribute("aria-label",
+    "Bodenspeicher "+Math.round(f*100)+" Prozent der nutzbaren Feldkapazität");
+  document.getElementById("profil-bz").textContent =
+    "0–30 cm · nFK "+Math.round(nfk)+" mm";
+
+  const gesamt = gesamtVon(h,auswahl);
+  const top = besteArt(h,auswahl);
+  document.getElementById("index").innerHTML =
+    Math.round(gesamt)+"<span>/100</span>";
+  document.getElementById("stufe").textContent =
+    stufe(gesamt)+(top? " · "+top : "");
+
+  const richtung = h.bilanz14>2 ? "steigend" : h.bilanz14<-2 ? "fallend" : "stabil";
+  const pfeil = h.bilanz14>2 ? "↑" : h.bilanz14<-2 ? "↓" : "→";
+  document.getElementById("kennwerte").innerHTML =
+    "Speicher <b>"+Math.round(f*100)+" %</b> der nFK "+
+    "= <b>"+(f*nfk).toFixed(0)+" mm</b><br>"+
+    "Bilanz 14 d <b>"+(h.bilanz14>0?"+":"")+h.bilanz14.toFixed(0)+" mm</b> "+
+    "<span class='pfeil'>"+pfeil+"</span> "+richtung+"<br>"+
+    BODEN[spot.bodenklasse].bz;
+
+  // Arten
+  const ael = document.getElementById("arten");
+  ael.innerHTML = "";
+  for(const a of ARTEN){
+    if(!auswahl.has(a.name)) continue;
+    const v = h.index[a.name];
+    const row = document.createElement("div");
+    row.className = "art"+(v==null?" aus":"");
+    if(v==null){
+      const g = h.grund[a.name];
+      const txt = g==="Saison" ? "außerhalb der Saison"
+        : g==="Habitat" ? "Habitat passt nicht — braucht "+
+            a.habitate.join(" oder ")
+        : "Bestand passt nicht — braucht "+a.baeume.join(", ");
+      row.innerHTML = "<span>"+a.name+"</span>"+
+        "<span style='font-size:.72rem'>"+txt+"</span><span></span>";
+    } else {
+      row.innerHTML =
+        "<span>"+a.name+"</span>"+
+        "<span class='balken'><i style='width:"+v.toFixed(0)+"%;"+
+          "background:"+feuchtefarbe(h.lag[a.name])+"'></i></span>"+
+        "<span class='wert'>"+Math.round(v)+"</span>"+
+        "<span class='detail'>Reizfenster "+
+          Math.round(h.lag[a.name]*100)+" % · "+
+          h.temp[a.name].toFixed(1)+" °C · Latenz "+a.lag+" d</span>";
+    }
+    ael.appendChild(row);
+  }
+
+  // Verlauf
+  const von = new Date(Date.now()-14*864e5).toISOString().slice(0,10);
+  const bis = new Date(Date.now()+16*864e5).toISOString().slice(0,10);
+  const fen = reihe.filter(r=>r.tag>=von && r.tag<=bis);
+  const vel = document.getElementById("verlauf");
+  vel.innerHTML = "";
+  for(const r of fen){
+    const g = gesamtVon(r,auswahl);
+    const d = document.createElement("div");
+    d.style.height = Math.max(2,g)+"%";
+    if(r.prognose) d.className = "prog";
+    if(r.tag===heuteStr) d.className += " heute";
+    d.title = dt(r.tag)+" Index "+Math.round(g);
+    vel.appendChild(d);
+  }
+  document.getElementById("achse-a").textContent = dt(fen[0].tag);
+  document.getElementById("achse-b").textContent = dt(fen[fen.length-1].tag);
+
+  // Fenster
+  const zukunft = reihe.filter(r=>r.tag>=heuteStr);
+  const fl = findeFenster(zukunft,auswahl);
+  const fe = document.getElementById("fenster");
+  if(!auswahl.size){
+    fe.className = "fenster leer";
+    fe.innerHTML = "Keine Art ausgewählt.";
+  } else if(fl.length){
+    fe.className = "fenster";
+    fe.innerHTML = "Günstige Fenster:<br>"+fl.map(([a,b,s])=>
+      "<b>"+dt(a)+" bis "+dt(b)+"</b> — Spitze "+Math.round(s)).join("<br>");
+  } else {
+    const best = zukunft.reduce((x,y)=>
+      gesamtVon(y,auswahl)>gesamtVon(x,auswahl)?y:x);
+    fe.className = "fenster leer";
+    fe.innerHTML = "Kein Fenster in den nächsten 16 Tagen. Bester Tag "+
+      "<b>"+dt(best.tag)+"</b> mit Index "+
+      Math.round(gesamtVon(best,auswahl))+".";
+  }
+
+  document.getElementById("ergebnis").hidden = false;
+  document.getElementById("k-boden").textContent =
+    BODEN[spot.bodenklasse].bz + " · " + Math.round(nfk) + " mm nFK";
+  fuelleRegler();
+}
+
+/* =======================================================================
+   Ablauf
+   ===================================================================== */
+
+async function lade(){
+  const s = spots[aktiv];
+  const st = document.getElementById("status");
+  st.className = "status";
+  st.textContent = "Wetterdaten für "+s.name+" …";
+  try{
+    const roh = await holeWetter(s.lat,s.lon);
+    zeichne(berechne(s,roh), s);
+    st.textContent = "";
+    st.hidden = true;
+  }catch(err){
+    st.hidden = false;
+    st.className = "status fehler";
+    st.textContent = "Wetterdaten nicht abrufbar: "+err.message+". ";
+    const b = document.createElement("button");
+    b.className = "knopf";
+    b.style.marginTop = ".5rem";
+    b.textContent = "Erneut versuchen";
+    b.onclick = ()=>lade();
+    st.appendChild(document.createElement("br"));
+    st.appendChild(b);
+    document.getElementById("ergebnis").hidden = true;
+  }
+}
+
+function standortHinzufuegen(){
+  if(!navigator.geolocation){
+    alert("Dieses Gerät gibt keine Position heraus.");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const name = prompt("Name des Standorts?","Neuer Spot");
+    if(!name) return;
+    spots.push({key:"x"+Date.now(), name, lat:pos.coords.latitude,
+      lon:pos.coords.longitude, bodenklasse:"reinsand",
+      feuchtestufe:"maessig_frisch", bestand:"Kiefer", expo:1.00});
+    aktiv = spots.length-1;
+    await setze("spots", spots);
+    zeichneSpots(); lade();
+  }, err=>alert("Position nicht verfügbar: "+err.message),
+     {enableHighAccuracy:true, timeout:10000});
+}
+
+/* =======================================================================
+   Umgebungskarte
+   ===================================================================== */
+
+let karte = null, karteGruppe = null;
+
+/* Gebündelter Abruf: Open-Meteo nimmt Koordinaten kommagetrennt und
+   liefert dann eine Liste. 121 Zellen kosten so fünf Abfragen statt 121.
+   Bodenfeuchte wird hier nicht mitgeholt — Stundenwerte für 121 Punkte
+   sprengen die Antwortgröße, das Speichermodell trägt die Bilanz. */
+async function holeWetterGitter(punkte, aufProAnfrage=25, fortschritt=null){
+  const raus = [];
+  for(let i=0; i<punkte.length; i+=aufProAnfrage){
+    const block = punkte.slice(i, i+aufProAnfrage);
+    const q = new URLSearchParams({
+      latitude: block.map(p=>p.lat.toFixed(4)).join(","),
+      longitude: block.map(p=>p.lon.toFixed(4)).join(","),
+      daily:["precipitation_sum","et0_fao_evapotranspiration",
+             "temperature_2m_mean"].join(","),
+      past_days:"45", forecast_days:"7", timezone:"Europe/Berlin"
+    }).toString();
+    const a = await fetch("https://api.open-meteo.com/v1/forecast?"+q,
+                          {method:"GET", mode:"cors"});
+    if(!a.ok) throw new Error("Open-Meteo antwortet mit "+a.status);
+    const j = await a.json();
+    const teil = Array.isArray(j) ? j : [j];
+    if(teil.length !== block.length)
+      throw new Error(`Antwort passt nicht (${teil.length} statt ${block.length})`);
+    raus.push(...teil);
+    if(fortschritt) fortschritt(raus.length, punkte.length);
+  }
+  return raus;
+}
+
+const kFarbe = v =>
+  v>=65 ? "#2f4f22" : v>=40 ? "#6E8A55" :
+  v>=20 ? "#C08A1E" : "#CFC8B6";
+
+async function umgebungRechnen(){
+  const s = spots[aktiv];
+  const st = document.getElementById("k-status");
+  const knopf = document.getElementById("k-rechnen");
+
+  if(!auswahl.size){
+    st.className = "o-status fehler";
+    st.textContent = "Erst oben mindestens eine Art auswählen.";
+    return;
+  }
+
+  const r = parseFloat(document.getElementById("k-radius").value);
+  const n = 11;                       // 11 x 11 = 121 Zellen
+  const h = (2*r)/n;                  // Zellhöhe in Grad
+  const kf = Math.cos(s.lat*Math.PI/180);
+  const hLon = h/kf;                  // längengradkorrigiert
+
+  const zellen = [];
+  for(let iy=0; iy<n; iy++){
+    for(let ix=0; ix<n; ix++){
+      zellen.push({
+        lat: s.lat - r + h*(iy+0.5),
+        lon: s.lon - r/kf + hLon*(ix+0.5),
+      });
+    }
+  }
+
+  knopf.disabled = true;
+  st.className = "o-status";
+  st.textContent = "Wetterdaten für 121 Rasterpunkte …";
+
+  let wetter;
+  try{
+    wetter = await holeWetterGitter(zellen, 25, (fertig,ges)=>{
+      st.textContent = `Wetterdaten ${fertig}/${ges} Rasterpunkte …`;
+    });
+  }catch(err){
+    st.className = "o-status fehler";
+    st.textContent = "Kartendaten nicht abrufbar: "+err.message;
+    knopf.disabled = false;
+    return;
+  }
+
+  st.textContent = "Bewerte Zellen …";
+  const heuteStr = new Date().toISOString().slice(0,10);
+
+  for(let i=0; i<zellen.length; i++){
+    // Gewicht 1.0: ohne Stundenwerte gibt es nur das Speichermodell
+    const reihe = berechne({...s, lat:zellen[i].lat, lon:zellen[i].lon},
+                           wetter[i], 1.0);
+    const tag = reihe.find(x=>x.tag===heuteStr) || reihe[reihe.length-1];
+    zellen[i].index = gesamtVon(tag, auswahl);
+    zellen[i].art = besteArt(tag, auswahl);
+    zellen[i].fuell = tag.fuellgrad;
+    zellen[i].bilanz = tag.bilanz14;
+  }
+
+  // Karte aufbauen
+  const el = document.getElementById("k-karte");
+  el.hidden = false;
+  document.getElementById("k-rampe").hidden = false;
+  document.getElementById("k-marken").hidden = false;
+  document.getElementById("k-rampe").innerHTML =
+    [8,30,52,80].map(v=>`<i style="background:${kFarbe(v)}"></i>`).join("");
+
+  if(!karte){
+    karte = L.map(el, {scrollWheelZoom:false});
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {maxZoom:16, attribution:"&copy; OpenStreetMap"}).addTo(karte);
+    karteGruppe = L.featureGroup().addTo(karte);
+  } else {
+    karteGruppe.clearLayers();
+  }
+
+  const nfk = effektiveNfk(s);
+  for(const z of zellen){
+    const kachel = L.rectangle(
+      [[z.lat-h/2, z.lon-hLon/2],[z.lat+h/2, z.lon+hLon/2]],
+      {stroke:false, fillColor:kFarbe(z.index), fillOpacity:.55});
+    kachel.bindPopup(
+      `<b>Index ${Math.round(z.index)}</b>`+
+      (z.art? ` — ${z.art}` : "")+"<br>"+
+      `Speicher ${Math.round(z.fuell*100)} % von ${Math.round(nfk)} mm<br>`+
+      `Bilanz 14 d ${z.bilanz>0?"+":""}${z.bilanz.toFixed(0)} mm<br>`+
+      `<span style="font-size:.7rem;color:#8A5A2B">`+
+      `${z.lat.toFixed(4)}, ${z.lon.toFixed(4)}</span>`);
+    karteGruppe.addLayer(kachel);
+  }
+
+  // Standortmarken
+  for(const p of spots){
+    if(p.lat < s.lat-r || p.lat > s.lat+r) continue;
+    if(p.lon < s.lon-r/kf || p.lon > s.lon+r/kf) continue;
+    karteGruppe.addLayer(L.circleMarker([p.lat,p.lon],
+      {radius:5, color:"#1C2420", weight:2,
+       fillColor:"#fff", fillOpacity:1})
+      .bindPopup("<b>"+p.name+"</b>"));
+  }
+
+  karte.fitBounds(karteGruppe.getBounds());
+  setTimeout(()=>karte.invalidateSize(), 100);
+
+  const beste = zellen.reduce((a,b)=>b.index>a.index?b:a);
+  st.className = "o-status";
+  st.textContent =
+    `Beste Zelle: Index ${Math.round(beste.index)} bei `+
+    `${beste.lat.toFixed(4)}, ${beste.lon.toFixed(4)}`+
+    (beste.art? ` (${beste.art})` : "")+
+    ` · Bodenannahme ${Math.round(nfk)} mm nFK für alle Zellen.`;
+  knopf.disabled = false;
+}
+
+document.getElementById("k-rechnen").onclick = umgebungRechnen;
+
+/* ---- Ortseingabe ----
+   Zwei Wege: Koordinaten direkt, oder Ortsname über Nominatim
+   (OpenStreetMap). Nominatim erlaubt rund eine Abfrage pro Sekunde —
+   für Einzeleingaben unproblematisch. */
+
+function parseKoordinaten(text){
+  const t = text.trim().replace(/[;]/g, ",");
+  const m = t.match(
+    /^(-?\d{1,3}(?:[.,]\d+)?)\s*,\s*(-?\d{1,3}(?:[.,]\d+)?)$/);
+  if(!m) return null;
+  const lat = parseFloat(m[1].replace(",", "."));
+  const lon = parseFloat(m[2].replace(",", "."));
+  if(isNaN(lat)||isNaN(lon)) return null;
+  if(Math.abs(lat)>90 || Math.abs(lon)>180) return null;
+  return {lat, lon};
+}
+
+async function geokodiere(begriff){
+  const q = new URLSearchParams({
+    q: begriff, format:"json", limit:"1", addressdetails:"0"
+  }).toString();
+  const a = await fetch("https://nominatim.openstreetmap.org/search?"+q,
+                        {method:"GET", mode:"cors"});
+  if(!a.ok) throw new Error("Ortssuche antwortet mit "+a.status);
+  const j = await a.json();
+  if(!Array.isArray(j) || !j.length) throw new Error("Ort nicht gefunden");
+  return {lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon),
+          name: (j[0].display_name||begriff).split(",")[0]};
+}
+
+function zeigeOrtsuche(an){
+  document.getElementById("ortsuche").hidden = !an;
+  document.getElementById("o-status").textContent = "";
+  if(an){
+    document.getElementById("o-eingabe").value = "";
+    document.getElementById("o-eingabe").focus();
+  }
+}
+
+async function ortHinzufuegen(){
+  const eingabe = document.getElementById("o-eingabe").value.trim();
+  const st = document.getElementById("o-status");
+  if(!eingabe){ st.className="o-status"; st.textContent="Bitte etwas eingeben."; return; }
+
+  st.className = "o-status";
+  st.textContent = "Suche …";
+
+  let lat, lon, name;
+  const k = parseKoordinaten(eingabe);
+  if(k){
+    lat = k.lat; lon = k.lon;
+    name = prompt("Name für diesen Standort?", "Neuer Spot");
+    if(!name){ st.textContent=""; return; }
+  } else {
+    try{
+      const g = await geokodiere(eingabe);
+      lat = g.lat; lon = g.lon; name = g.name;
+    }catch(err){
+      st.className = "o-status fehler";
+      st.textContent = err.message +
+        " — alternativ Koordinaten eingeben, z. B. 52.1303, 13.4076";
+      return;
+    }
+  }
+
+  spots.push({key:"x"+Date.now(), name, lat, lon,
+    bodenklasse:"reinsand", feuchtestufe:"maessig_frisch",
+    bestand:"Kiefer", habitat:"Wald", expo:1.00});
+  aktiv = spots.length-1;
+  await setze("spots", spots);
+  zeigeOrtsuche(false);
+  zeichneSpots();
+  await lade();
+  zeichneRang();
+}
+
+document.getElementById("o-suchen").onclick = ortHinzufuegen;
+document.getElementById("o-abbrechen").onclick = ()=>zeigeOrtsuche(false);
+document.getElementById("o-eingabe").addEventListener("keydown", e=>{
+  if(e.key==="Enter"){ e.preventDefault(); ortHinzufuegen(); }
+});
+
+document.getElementById("v-umbenennen").onclick = async ()=>{
+  const s = spots[aktiv];
+  const neu = prompt("Neuer Name:", s.name);
+  if(!neu) return;
+  s.name = neu.trim() || s.name;
+  await setze("spots", spots);
+  zeichneSpots();
+  zeichne(letzteReihe, s);
+  zeichneRang();
+};
+
+document.getElementById("v-loeschen").onclick = async ()=>{
+  if(spots.length<=1){
+    alert("Der letzte Standort kann nicht gelöscht werden.");
+    return;
+  }
+  const s = spots[aktiv];
+  if(!confirm("„"+s.name+"“ wirklich löschen?")) return;
+  spots.splice(aktiv,1);
+  aktiv = 0;
+  await setze("spots", spots);
+  zeichneSpots();
+  await lade();
+  zeichneRang();
+};
+
+async function reglerGeaendert(){
+  const s = spots[aktiv];
+  s.bodenklasse = document.getElementById("r-boden").value;
+  s.feuchtestufe = document.getElementById("r-feuchte").value;
+  s.bestand = document.getElementById("r-bestand").value;
+  s.habitat = document.getElementById("r-habitat").value;
+  const ex = parseFloat(document.getElementById("r-expo").value);
+  s.expo = isNaN(ex)? 1.0 : Math.max(.8,Math.min(1.2,ex));
+  await setze("spots", spots);
+  lade();
+}
+["r-boden","r-feuchte","r-bestand","r-habitat","r-expo"].forEach(id=>
+  document.getElementById(id).addEventListener("change",reglerGeaendert));
+
+/* ---- Fundbuch ---- */
+
+async function zeichneFunde(){
+  const funde = await hole("funde",[]);
+  const el = document.getElementById("funde");
+  el.innerHTML = "";
+  if(!funde.length){
+    el.innerHTML = "<li style='color:var(--rost);font-size:.78rem'>"+
+      "Noch keine Einträge. Der erste Fund macht das Modell kalibrierbar."+
+      "</li>";
+    return;
+  }
+  funde.slice().reverse().forEach(f=>{
+    const li = document.createElement("li");
+    li.innerHTML = "<span><b>"+f.arten+"</b>"+
+      (f.notiz? "<br>"+f.notiz : "")+
+      "<span class='meta'><br>"+dt(f.datum)+" · "+f.spot+
+      " · Index "+f.index+" · Speicher "+f.fuellgrad+" %</span></span>";
+    const b = document.createElement("button");
+    b.className = "loeschen"; b.textContent = "×";
+    b.title = "Eintrag löschen";
+    b.onclick = async ()=>{
+      const rest = (await hole("funde",[])).filter(x=>x.id!==f.id);
+      await setze("funde",rest); zeichneFunde();
+    };
+    li.appendChild(b);
+    el.appendChild(li);
+  });
+}
+
+document.getElementById("f-speichern").onclick = async ()=>{
+  const arten = document.getElementById("f-arten").value.trim();
+  if(!arten){ document.getElementById("f-arten").focus(); return; }
+  const heuteStr = new Date().toISOString().slice(0,10);
+  const h = letzteReihe? letzteReihe.find(r=>r.tag===heuteStr) : null;
+  const funde = await hole("funde",[]);
+  funde.push({
+    id:Date.now(), datum:heuteStr, spot:spots[aktiv].name,
+    arten, notiz:document.getElementById("f-notiz").value.trim(),
+    index: h? Math.round(gesamtVon(h,auswahl)) : "—",
+    fuellgrad: h? Math.round(h.fuellgrad*100) : "—",
+    nfk: Math.round(effektiveNfk(spots[aktiv])),
+    /* Einzelindizes aller Arten mitschreiben, nicht nur der Auswahl —
+       zum Kalibrieren braucht man auch die Arten, die nicht kamen. */
+    je_art: h ? Object.fromEntries(ARTEN.map(a=>
+      [a.name, h.index[a.name]==null? null : Math.round(h.index[a.name])])) : {}
+  });
+  const ok = await setze("funde",funde);
+  document.getElementById("f-arten").value = "";
+  document.getElementById("f-notiz").value = "";
+  if(!ok) alert("Eintrag konnte nicht gespeichert werden.");
+  zeichneFunde();
+};
+
+document.getElementById("f-export").onclick = async ()=>{
+  const funde = await hole("funde",[]);
+  if(!funde.length){ alert("Noch keine Einträge."); return; }
+  const csv = "datum;standort;nfk_mm;index;fuellgrad_proz;arten;notiz\n"+
+    funde.map(f=>[f.datum,f.spot,f.nfk,f.index,f.fuellgrad,
+      '"'+f.arten.replace(/"/g,'""')+'"',
+      '"'+(f.notiz||"").replace(/"/g,'""')+'"'].join(";")).join("\n");
+  try{
+    await navigator.clipboard.writeText(csv);
+    alert("CSV in der Zwischenablage — "+funde.length+" Einträge.");
+  }catch{
+    prompt("Kopieren:",csv);
+  }
+};
+
+/* ---- Start ---- */
+(async ()=>{
+  const gespeichert = await hole("spots",null);
+  if(Array.isArray(gespeichert) && gespeichert.length){
+    spots = gespeichert.map(s=>({habitat:"Wald", ...s}));
+  }
+  const gAuswahl = await hole("auswahl",null);
+  if(Array.isArray(gAuswahl)) auswahl = new Set(gAuswahl);
+  zeichneSpots();
+  zeichneFilter();
+  await zeichneFunde();
+  await lade();
+  zeichneRang();
+})();
+</script>
+</body>
+</html>
